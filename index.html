@@ -1,0 +1,1597 @@
+<html>
+	<head>
+		<title>Editor 2D 3D</title>
+		<style>
+
+		body {
+			font-family: Monospace;
+			
+			margin: 0px;
+			overflow: hidden;
+		}
+		
+		#canvas3D {
+			position:absolute;
+			top:0px;
+			left: 50%;
+			height:100%;
+			width:50%;
+			
+		}
+		
+		#canvas2D {
+			height:100%;
+			width:50%;
+		}
+		
+
+		
+	</style>
+		
+		<script src="lib/three.min.js"></script>
+		<script src="lib/stats.min.js"></script>
+		<script src="lib/OrbitControls.js"></script>
+		<script src="lib/dat.gui.min.js"></script>
+		<script src="lib/BufferGeometryUtils.js"></script>
+		<script src="lib/three.text-texture.js"></script>
+		<script src="lib/three.text-sprite.js"></script>
+		<script src="lib/OBB.js"></script>
+	</head>
+	<body>
+	<div id="canvas2D">
+		<script type='text/javascript'>
+		// Assegnazione variabili 2D
+		var canvas2D = document.getElementById("canvas2D");
+		canvas2D.innerWidth = window.innerWidth/2;
+		canvas2D.innerHeight = window.innerHeight;
+		var scene2D, camera2D, renderer2D, controls2D, stats2D, gui2D;
+		var wall_folder, draw_walls_mode, draw_walls_controller, walls, wall_selected, info_wall_selected, dragging_wall;
+		var end_editing_walls=false;
+		var remove_last_wall, remove_all_walls, merge_all_walls;
+		var wall_material = new THREE.MeshBasicMaterial( {color: 0x000000} );
+		var wall_selected_material = new THREE.MeshBasicMaterial( {color: 0x616161} );
+		var floor;
+		var height=1000;
+		var width=1000;
+		var start_pos_f, end_pos_f, parameters_wall_folder;
+		var settings = {
+			Width: 1000,
+			Height: 1000,
+			DrawWalls: false,
+			WallHeight: 5,
+			WallDepth: 3,
+			WallsPos: {
+						start:{ x:50, y:50, z:50},
+						end:{ x:50, y:50, z:50}
+			},
+			Treni: 0,
+			CampatexTreno: 3,
+			LunghezzaTreni: 800,
+			ProfonditaTreni: 100,
+			DoppiaSpalla: false,
+			AltezzaSpalle:500,
+			showNames:false,
+			LivellixCampata: 3
+		}
+		var trains_folder, all_trains_folder, draw_trains_mode, trains, train_portapallet, train_selected, campata_selected, dragging_train;
+		var all_campate = [];
+		var all_trains = [];
+		var functions;
+		var duplication_mode; 
+		var duplicating_train = false;
+		var wall_name = "Wall";
+		var floor_name = "Floor";
+		var train_name = "Treno";
+		var campata_name = "Campata";
+		
+		// Avvio delle funzioni principali
+		Start2D();
+		buildGui2D();
+		Update2D();
+		
+		// Funzione per modificare la visualizzazione quando il canvas2D viene ridimensionato
+		function onResize2D() {
+			canvas2D.innerWidth = window.innerWidth/2;
+			canvas2D.innerHeight = window.innerHeight;
+  			renderer2D.setSize( canvas2D.innerWidth, canvas2D.innerHeight );
+  			camera2D.left = canvas2D.innerWidth / - 2;
+			camera2D.right = canvas2D.innerWidth / 2;
+			camera2D.top = canvas2D.innerHeight / 2;
+			camera2D.bottom = canvas2D.innerHeight / -2;
+			camera2D.updateProjectionMatrix();
+			var r = document.body.offsetWidth-canvas2D.children[1].width;
+			gui2D.domElement.style.right =  r+"px";
+			
+  		}
+
+		// funzione che genera la scena2D all'apertura della pagina web
+		function Start2D() {
+			// scena
+			scene2D = new THREE.Scene();
+			scene2D.name= "Scene2D";
+			// camera
+			camera2D = new THREE.OrthographicCamera( canvas2D.innerWidth  / - 2, canvas2D.innerWidth  / 2, canvas2D.innerHeight / 2, canvas2D.innerHeight / - 2, 0.0001, 1000 );
+			camera2D.position.set(500,1000,500);
+			camera2D.zoom=0.5;
+			camera2D.updateProjectionMatrix();
+			camera2D.name = "Camera2D";
+			scene2D.add(camera2D);
+			// render	
+			renderer2D = new THREE.WebGLRenderer( {antialias: true} );
+			renderer2D.setSize( canvas2D.innerWidth, canvas2D.innerHeight );
+			renderer2D.setClearColor( 0x252850 );
+			renderer2D.setPixelRatio( canvas2D.devicePixelRatio );
+			canvas2D.appendChild( renderer2D.domElement );
+			// controllo dei moviementi della camera
+			controls2D = new THREE.OrbitControls( camera2D, renderer2D.domElement  );
+			controls2D.addEventListener( 'change', Render2D );
+			controls2D.target.set(500, 0, 500);
+			controls2D.update();
+			// statistiche fps in alto a sinistra
+			stats2D = new Stats();
+			stats2D.domElement.style.position = 'absolute';
+			stats2D.domElement.style.top = '0px';
+			canvas2D.appendChild( stats2D.domElement );
+			// chiama onResize2D() quando viene modificata la dimensione della pagina
+			window.addEventListener( 'resize', onResize2D, false );
+			// chiamata a funzione che disegna il pavimento
+			drawFloor();
+		}
+
+		// Funzioni per l'aggiornamento e il render della pagina
+		function Update2D() {
+			camera2D.position.setX(controls2D.target.x);
+			camera2D.position.setZ(controls2D.target.z);
+			controls2D.update();
+			stats2D.update();
+			// Setta la grandezza del font della scritta all'interno delle campate in base allo zoom
+			if(all_campate.length>0 ){
+				all_campate.forEach( c =>{
+					if (c.children.length>0) {c.children[0].fontSize= 8+ (10/camera2D.zoom)}
+				});
+			}
+			Render2D();
+			requestAnimationFrame( Update2D );
+		}
+
+		//funzione per effettuare il render della pagina
+		function Render2D(){
+			renderer2D.render(scene2D, camera2D);
+		}
+
+		// elimina gui del canvas2D se presente
+		function clearGui2D() {
+  			if ( gui2D ) gui2D.destroy();
+				gui2D = new dat.GUI( { autoPlace: false } );
+				var r = document.body.offsetWidth-canvas2D.children[1].width;
+				gui2D.domElement.setAttribute("style", "position: absolute; right: "+r+"px; top: 2px");
+				canvas2D.appendChild(gui2D.domElement);
+				gui2D.domElement.id = 'gui2D';
+  			gui2D.open();
+  		}
+		
+		// crea gui 2D
+		function buildGui2D() {
+  			clearGui2D();
+			// Controlli per la gestione del pavimento
+			var dimensions = gui2D.addFolder("Floor Dimensions");
+			dimensions.add(settings, "Width").min(0).onChange(function(newVal){
+				width = newVal;
+				drawFloor();
+			});
+			dimensions.add(settings, "Height").min(0).onChange(function(newVal){
+				height = newVal;
+				drawFloor();
+			});
+			// controlli per la gestione dei muri
+			wall_folder = gui2D.addFolder("Walls");
+			wall_folder.add(settings, "WallHeight").name("Wall Height").min(5).step(1); //.onChange(function(newVal){});
+			wall_folder.add(settings, "WallDepth").name("Wall Depth").min(1).step(1);
+			draw_walls_controller = wall_folder.add(settings, "DrawWalls").name("Draw Free Hand").onChange(function(newVal){
+				if(newVal==true){
+					if(height>0 && width>0){
+						draw_walls_mode=true;
+					}else{
+						draw_walls_mode=false;
+						controls2D.enabled = true;
+						this.setValue(false);
+					}
+				}else{
+					draw_walls_mode=false;
+					controls2D.enabled = true;
+				}
+			});
+			functions = { 
+				remove_last:function(){ 
+					get_walls();
+					if (wall_selected == walls[walls.length-1]){
+						clear3DScene();
+						info_wall_selected.__ul.setAttribute("style", "display: none");
+					}
+					scene2D.remove(walls[walls.length-1]);
+					if(walls.length>0){
+						remove_last_wall.__li.setAttribute("style", "display: ");
+						remove_all_walls.__li.setAttribute("style", "display: ");
+						merge_all_walls.__li.setAttribute("style", "display: ");
+					}
+					get_walls();
+					if(walls.length==0){
+						remove_last_wall.__li.setAttribute("style", "display: none");
+						remove_all_walls.__li.setAttribute("style", "display: none");
+						merge_all_walls.__li.setAttribute("style", "display: none");
+						wall_folder.__controllers.forEach(c =>{
+							if(c.property == "draw_perimeter"){
+								c.__li.setAttribute("style", "display: ");
+							}
+						});
+					}
+				},
+				remove_all:function(){
+					if (wall_selected !== undefined) {
+						clear3DScene();
+						info_wall_selected.__ul.setAttribute("style", "display: none");
+					}
+					get_walls();
+					walls.forEach(w => {scene2D.remove(w);});
+					remove_last_wall.__li.setAttribute("style", "display: none");
+					remove_all_walls.__li.setAttribute("style", "display: none");
+					merge_all_walls.__li.setAttribute("style", "display: none");
+					wall_folder.__controllers.forEach(c =>{
+						if(c.property == "draw_perimeter"){
+							c.__li.setAttribute("style", "display: ");
+						}
+					});
+				},
+				merge:function(){
+					get_walls();
+					var wall_geometries = [];
+					walls.forEach(wall =>{
+						wall.updateMatrix();
+						wall.geometry.computeBoundingBox();
+						wall_geometries.push(wall.geometry);
+						scene2D.remove(wall);
+					});
+					var buffgeom =  THREE.BufferGeometryUtils.mergeBufferGeometries(wall_geometries, true);
+					var wall_merge = new THREE.Mesh(buffgeom, wall_material);
+					wall_merge.name=wall_name;
+					scene2D.add(wall_merge);
+					wall_folder.__ul.setAttribute("style", "display: none");
+					draw_walls_mode = false;
+					end_editing_walls = true;
+					controls2D.enabled = true;
+					if (wall_selected !== undefined) { clear3DScene()}
+				},
+				draw_perimeter: function(){
+					start_pos = {x:0, y:0.5, z:(settings["WallDepth"]/2)};
+					end_pos = {x:width, y:0.5, z:(settings["WallDepth"]/2)};
+					drawWall(settings["WallHeight"],settings["WallDepth"]);
+					start_pos = {x:width-(settings["WallDepth"]/2), y:0.5, z:(settings["WallDepth"]/2)};	
+					end_pos = {x:width-(settings["WallDepth"]/2), y:0.5, z:height};
+					drawWall(settings["WallHeight"],settings["WallDepth"]);
+					start_pos = {x:width-(settings["WallDepth"]/2), y:0.5, z:height-(settings["WallDepth"]/2)};
+					end_pos = {x:0, y:0.5, z:height-(settings["WallDepth"]/2)};
+					drawWall(settings["WallHeight"],settings["WallDepth"]);
+					start_pos = {x:(settings["WallDepth"]/2), y:0.5, z:height-(settings["WallDepth"]/2)};
+					end_pos = {x:(settings["WallDepth"]/2), y:0.5, z:(settings["WallDepth"]/2)};
+					drawWall(settings["WallHeight"],settings["WallDepth"]);
+					wall_folder.__controllers.forEach(c =>{
+						if(c.property == "draw_perimeter"){
+							c.__li.setAttribute("style", "display: none");
+						}
+					});
+					get_walls();
+				},
+				deselect_wall: function(){
+					info_wall_selected.__ul.setAttribute("style", "display: none");
+					wall_selected.material = wall_material;
+					wall_selected = undefined;
+					clear3DScene();
+				}
+			};
+			wall_folder.add(functions,'draw_perimeter').name("Draw Perimeter");
+			info_wall_selected = wall_folder.addFolder("Info Wall");
+			info_wall_selected.__ul.setAttribute("style", "display: none");
+			parameters_wall_folder = info_wall_selected.addFolder("Parameters");
+			start_pos_f = info_wall_selected.addFolder("Start Position");
+			end_pos_f = info_wall_selected.addFolder("End Position");
+			info_wall_selected.add(functions,'deselect_wall').name("Deselect Wall");
+			remove_last_wall = wall_folder.add(functions,'remove_last').name("Remove Last Wall");
+			remove_last_wall.__li.setAttribute("style", "display: none");
+			remove_all_walls =  wall_folder.add(functions,'remove_all').name("Remove All Walls");
+			remove_all_walls.__li.setAttribute("style", "display: none");
+			merge_all_walls = wall_folder.add(functions,'merge').name("End Editing Walls");
+			merge_all_walls.__li.setAttribute("style", "display: none");
+			// controlli per la gestione dei treni
+			trains_folder = gui2D.addFolder("Treni");
+			all_trains_folder = trains_folder.addFolder("Tutti i Treni");
+			all_trains_folder.add(settings, "Treni").min(0).step(1).name("Numero Treni").onChange(function(newVal){
+				drawTrains2D(newVal, this.object.LunghezzaTreni, this.object.ProfonditaTreni, this.object.AltezzaSpalle, this.object.CampatexTreno, this.object.DoppiaSpalla,  this.object.showNames,  this.object.LivellixCampata );
+			});
+			all_trains_folder.add(settings, "LunghezzaTreni").name("Lunghezza Treni").min(100).step(10).onChange(function(newVal){
+				drawTrains2D(this.object.Treni, newVal, this.object.ProfonditaTreni, this.object.AltezzaSpalle, this.object.CampatexTreno, this.object.DoppiaSpalla,  this.object.showNames,  this.object.LivellixCampata );
+			});
+			all_trains_folder.add(settings, "ProfonditaTreni").name("Profondit&agrave; Treni").min(10).step(5).onChange(function(newVal){
+				drawTrains2D(this.object.Treni,  this.object.LunghezzaTreni, newVal, this.object.AltezzaSpalle, this.object.CampatexTreno, this.object.DoppiaSpalla,  this.object.showNames,  this.object.LivellixCampata );
+			});
+			all_trains_folder.add(settings, "AltezzaSpalle").name("Altezza Spalle").min(5).step(1).onChange(function(newVal){
+				scene2D.traverse(child => {
+					if(child.name.startsWith(train_name)){
+						child.userData.Altezza = newVal;
+					}
+				});
+			});
+			all_trains_folder.add(settings, "LivellixCampata").name("Livelli x Campata").min(1).step(1).onChange(function(newVal){
+				scene2D.traverse(child => {
+					if(child.name.startsWith(train_name)){
+						child.userData.Livelli = newVal;
+					}
+				});
+			});
+			all_trains_folder.add(settings, "CampatexTreno").name("Campate x Treno").min(1).step(1).onChange(function(newVal){
+				drawTrains2D(this.object.Treni,  this.object.LunghezzaTreni, this.object.ProfonditaTreni, this.object.AltezzaSpalle, newVal,   this.object.DoppiaSpalla,  this.object.showNames,  this.object.LivellixCampata );
+			});
+			all_trains_folder.add(settings, "DoppiaSpalla").name("Doppia Spalla").onChange(function(newVal){
+				drawTrains2D(this.object.Treni,  this.object.LunghezzaTreni, this.object.ProfonditaTreni, this.object.AltezzaSpalle, this.object.CampatexTreno, newVal,  this.object.showNames,  this.object.LivellixCampata  );
+			});
+			all_trains_folder.add(settings, "showNames").name("Mostra Nomi").onChange(function(newVal){
+				scene2D.traverse(child =>{
+					if(child.name=="Testo"){
+						child.parent.parent.userData.showNames = newVal;
+						child.visible = newVal;
+					}
+				});
+			});
+			info_train = trains_folder.addFolder("Info Treno");
+			info_train.__ul.setAttribute("style", "display: none");
+			
+		}
+		
+		// elimina (se ci sono) e disegna tutti treni in 2D
+		function drawTrains2D(treni, lunghezza, profondita, altezza, campate, doppiaspalla, showNames, livellixCampata ){
+			var toRemove = [];
+			scene2D.traverse(child =>{
+				if(child.name.startsWith(train_name) || child.name=="Helper"){
+					toRemove.push(child);
+				}
+			});
+			train_selected = undefined;
+			campata_selected = undefined;
+			info_train.__ul.setAttribute("style", "display: none");
+			all_campate = [];
+			toRemove.forEach(el => {scene2D.remove(el);});
+			var interval_z = height/(treni+1);
+			var interval_x = (width - lunghezza)/2;
+			for(var t = 1; t<=treni; t++){
+				var start_p = new THREE.Vector3(interval_x, altezza, t*interval_z-(profondita/2));
+				draw2Dtrain( String.fromCharCode(96+t).toUpperCase(), start_p, lunghezza, profondita, altezza, campate, doppiaspalla, showNames, livellixCampata);
+			}
+			get_trains();
+			clearGui3D();
+			clear3DScene();
+		}
+		
+		// disegna singolo treno in 2D
+		function draw2Dtrain(id_train, start_p, lunghezza, profondita, altezza, campate, doppiaspalla, showNames, livelli){
+			var train_points = [];
+			train_points.push(start_p);
+			var interval = lunghezza/campate;
+			var campate_treno = []; 
+			for (var c = 1; c<=campate; c++){
+				var p1 = new THREE.Vector3(start_p.x+(interval*c), altezza, start_p.z);
+				var p2 = new THREE.Vector3(start_p.x+(interval*c), altezza, start_p.z+profondita);
+				if (doppiaspalla && c<campate){
+					var min = new THREE.Vector3(p1.x-interval, altezza, p1.z);
+					p1.x -= 4;
+					p2.x -= 4;
+					var max = new THREE.Vector3(p2.x, p2.y, p2.z);
+					train_points.push(new THREE.Vector3(p1.x, p1.y, p1.z));
+					train_points.push(new THREE.Vector3(p2.x, p2.y, p2.z));
+					p2.x += 8;
+					train_points.push(new THREE.Vector3(p2.x, p2.y, p2.z));
+					p1.x += 8;
+					train_points.push(new THREE.Vector3(p1.x, p1.y, p1.z));
+					p1.x -= 8;
+					train_points.push(new THREE.Vector3(p1.x, p1.y, p1.z));
+				} else {
+					var min = new THREE.Vector3(p1.x-interval, altezza, p1.z);
+					var max = p2;
+					train_points.push(p1);
+					train_points.push(p2);
+					train_points.push(p1);
+				}
+				if (doppiaspalla && c>1){ min.x += 4; } 
+				var box3 = new THREE.Box3(
+					min,
+					max
+				);
+				var box = new THREE.OBB().fromBox3(box3);
+				var c_name = id_train+"-"+c;
+				var center = box.center;
+				var campata = new THREE.Object3D();
+				campata.position.set(center.x, center.y, center.z);
+				campata.boundingBox = box;
+				campata.name = c_name;
+				var sprite = new THREE.TextSprite({
+					text:  c_name,
+					fontFamily: 'Arial, Helvetica, sans-serif',
+					fontSize: 8,
+					color: '#000000',
+				});
+				sprite.name="Testo";
+				sprite.visible = showNames; 
+				campata.add(sprite);
+				campate_treno.push(campata);
+			}			
+			var end_p = new THREE.Vector3(lunghezza+start_p.x, altezza,  start_p.z+profondita);
+			train_points.push(end_p);
+			var p = new THREE.Vector3(start_p.x, altezza, start_p.z+profondita);
+			train_points.push(p, start_p);
+			var train_geom = new THREE.BufferGeometry().setFromPoints(train_points);
+			var train_mesh = new THREE.Line( train_geom, point_material);
+			train_mesh.name = train_name+"-"+id_train;
+			train_mesh.geometry.computeBoundingBox();
+			campate_treno.forEach(camp => train_mesh.add(camp));
+			var u_data = {
+				id: id_train,
+				start_p: start_p,
+				Lunghezza: lunghezza,
+				profondita: profondita,
+				Altezza: altezza,
+				Campate: campate,
+				doppiaspalla: doppiaspalla,
+				showNames: showNames,
+				Livelli: livelli,
+				Rotazione: 0
+			}
+			train_mesh.userData = u_data;
+			scene2D.add(train_mesh);
+			all_campate = all_campate.concat(campate_treno);	
+		}
+		
+		// disegna il pavimento
+		function drawFloor(){
+			removeElFromScene(floor_name);
+			if (height>0 && width>0){
+				var geometry = new THREE.BoxGeometry( width, 1, height );
+				var material = new THREE.MeshBasicMaterial( {color: 0xffffff} );
+				floor = new THREE.Mesh( geometry, material );
+				floor.position.set(width/2, 0, height/2);
+				floor.name=floor_name;
+				scene2D.add( floor );
+			} else {
+				removeElFromScene("Wall");
+				draw_walls_mode=false;
+				controls2D.enabled = true;
+				//draw_walls_controller.setValue(false);
+			}
+		}
+		
+		// funzione per rimuovere dalla scena 2D tutti elementi che hanno l'attributo name="name"
+		function removeElFromScene(name){
+			var toRemove = [];
+			scene2D.traverse(child =>{
+				if(child.name===name){
+					toRemove.push(child);
+				}
+			});
+			toRemove.forEach(el => {
+				el.parent.remove(el);
+			});
+			all_campate = [];
+			get_trains();
+		}
+		
+		// svuota e ripopola l'array "walls" con tutti i muri presenti nella scena, se l'array contiene almeno un elemento mostra le cartelle dalla gui per rimozione e merge
+		function get_walls(){
+			walls = [];
+			scene2D.traverse(child =>{
+				if(child.name==wall_name){
+					walls.push(child);
+				}
+			});
+			if(walls.length>0){
+				remove_last_wall.__li.setAttribute("style", "display: ");
+				remove_all_walls.__li.setAttribute("style", "display: ");
+				merge_all_walls.__li.setAttribute("style", "display: ");
+			}
+		}
+		
+		// rimuove e ricrea il muro con le posizioni aggiornate
+		function changeWallPos(h, d){
+			scene2D.remove(wall_selected);
+			start_pos = settings["WallsPos"]["start"];
+			end_pos = settings["WallsPos"]["end"];
+			drawWall(h, d);
+			get_walls();
+			wall_selected = walls[walls.length-1];
+			wall_selected.material = wall_selected_material;
+			showWall3D();
+		}
+		
+		// gestione eventi mouse
+		// variabili
+		var raycaster = new THREE.Raycaster();
+		var mouse = new THREE.Vector2();
+		var start_pos, end_pos;
+		var point_material = new THREE.LineBasicMaterial({
+			color: 0x000000
+		}); 
+		var points_1 = [];
+		points_1.push( new THREE.Vector3( -20, 0, 0 ) );
+		points_1.push( new THREE.Vector3( 20, 0, 0 ) );
+		points_1.push( new THREE.Vector3( 0, 0, 0 ) );
+		var point_geometry_1 = new THREE.BufferGeometry().setFromPoints( points_1 );
+		var points_2 = [];
+		points_2.push( new THREE.Vector3( 0, 0, -20 ) );
+		points_2.push( new THREE.Vector3( 0, 0, 20 ) );
+		var point_geometry_2 = new THREE.BufferGeometry().setFromPoints( points_2 );
+		var start_point_mesh = new THREE.Line( THREE.BufferGeometryUtils.mergeBufferGeometries([point_geometry_1, point_geometry_2]), point_material);
+		var end_point_mesh = new THREE.Line( THREE.BufferGeometryUtils.mergeBufferGeometries([point_geometry_1, point_geometry_2]), point_material);
+		var line_temp;
+		
+		// eventi
+		// movimento del puntatore
+		canvas2D.addEventListener("pointermove", event => {
+			mouse.x = ( event.clientX / canvas2D.innerWidth ) * 2 - 1;
+			mouse.y = - ( event.clientY / canvas2D.innerHeight ) * 2 + 1;
+			raycaster.setFromCamera(mouse, camera2D);
+			if (draw_walls_mode && start_pos !== undefined) {
+				var intersects = raycaster.intersectObjects([floor]);
+				if (intersects.length > 0) {
+					scene2D.remove(line_temp);
+					controls2D.enabled = false;
+					end_pos = intersects[0].point;
+					end_point_mesh.position.set(end_pos.x, end_pos.y, end_pos.z);
+					line_temp = new THREE.Line( new THREE.BufferGeometry().setFromPoints([start_pos, end_pos]), point_material);
+					line_temp.name = "line_temp";
+					scene2D.add(line_temp);
+				}
+			} else if (dragging_wall==true){
+				var intersects = raycaster.intersectObjects([floor]);
+				if (intersects.length > 0) {
+					var x_interval = intersects[0].point.x-start_pos.x;// (wall_selected.start_pos.x+wall_selected.end_pos.x)/2;
+					var z_interval = intersects[0].point.z-start_pos.z;//(wall_selected.start_pos.z+wall_selected.end_pos.z)/2;
+					wall_selected.position.set(x_interval, wall_selected.position.y, z_interval);
+					wall_selected.updateMatrix();
+				}
+			} else if (dragging_train==true){
+				var intersects = raycaster.intersectObjects([floor]);
+				if (intersects.length > 0) {
+					var x_interval = intersects[0].point.x-start_pos.x;// (wall_selected.start_pos.x+wall_selected.end_pos.x)/2;
+					var z_interval = intersects[0].point.z-start_pos.z;//(wall_selected.start_pos.z+wall_selected.end_pos.z)/2;
+					train_selected.position.set(x_interval, train_selected.position.y, z_interval);
+					train_selected.updateMatrix();
+				}
+			}
+		});
+
+		// pressione click mouse
+		canvas2D.addEventListener("pointerdown", () => {
+			if (draw_walls_mode==true ){
+				var intersects = raycaster.intersectObjects([floor]);
+				if (intersects.length > 0) {
+					controls2D.enabled = false;
+					start_pos = intersects[0].point;
+					start_point_mesh.name="Start Point";
+					start_point_mesh.position.set(start_pos.x, start_pos.y, start_pos.z);
+					scene2D.add(start_point_mesh);
+					end_point_mesh.name="End Point";
+					end_point_mesh.position.set(start_pos.x, start_pos.y, start_pos.z);
+					scene2D.add(end_point_mesh);
+				}
+			} else if(end_editing_walls==false){
+				get_walls();
+				var intersects = raycaster.intersectObjects(walls);
+				if (intersects.length > 0) {
+					if (wall_selected!==undefined){
+						wall_selected.material = wall_material;
+					}
+					dragging_wall = true;
+					controls2D.enabled = false;
+					start_pos = intersects[0].point;
+					wall_selected = intersects[0].object;
+					info_wall_selected.__ul.setAttribute("style", "display: ");
+					wall_selected.material = wall_selected_material;
+					settings["WallsPos"] = {
+						"start":wall_selected.start_pos,
+						"end":wall_selected.end_pos,
+					}
+					settings["WallParameters"] = {
+						"Height": wall_selected.geometry.parameters.height,
+						"Depth": wall_selected.geometry.parameters.depth
+					}	
+					if(parameters_wall_folder.__controllers.length>0){
+						parameters_wall_folder.remove(parameters_wall_folder.__controllers[1]);
+						parameters_wall_folder.remove(parameters_wall_folder.__controllers[0]);
+					}
+					parameters_wall_folder.add(settings["WallParameters"] , "Height").min(5).step(1).onChange(function(newVal){
+						changeWallPos(newVal, settings["WallParameters"]["Depth"]);
+					});
+					parameters_wall_folder.add(settings["WallParameters"] , "Depth").min(3).step(1).onChange(function(newVal){
+						changeWallPos(settings["WallParameters"]["Height"], newVal);
+					});
+					if(start_pos_f.__controllers.length>0){
+						start_pos_f.remove(start_pos_f.__controllers[1]);
+						start_pos_f.remove(start_pos_f.__controllers[0]);
+						end_pos_f.remove(end_pos_f.__controllers[1]);
+						end_pos_f.remove(end_pos_f.__controllers[0]);
+					}
+					start_pos_f.add(settings["WallsPos"]["start"], "x").min(0).max(width).onChange(function(newVal){
+						changeWallPos(settings["WallParameters"]["Height"], settings["WallParameters"]["Depth"]);
+					});
+					start_pos_f.add(settings["WallsPos"]["start"], "z").min(0).max(height).onChange(function(newVal){
+						changeWallPos(settings["WallParameters"]["Height"], settings["WallParameters"]["Depth"]);
+					});
+					end_pos_f.add(settings["WallsPos"]["end"], "x").min(0).max(width).onChange(function(newVal){
+						changeWallPos(settings["WallParameters"]["Height"], settings["WallParameters"]["Depth"]);
+					});
+					end_pos_f.add(settings["WallsPos"]["end"], "z").min(0).max(height).onChange(function(newVal){
+						changeWallPos(settings["WallParameters"]["Height"], settings["WallParameters"]["Depth"]);
+					});
+					showWall3D();
+				} else if (wall_selected !== undefined){
+					var intersects = raycaster.intersectObjects([floor]);
+					if (intersects.length > 0) {
+						functions.deselect_wall();
+					}
+				}
+			} 
+			get_trains();
+			var obj = [];
+			all_campate.forEach(c=>{
+				if(c.boundingBox.intersectsRay(raycaster.ray)){
+					campata_selected = c;
+					start_pos = new THREE.Vector3(raycaster.ray.origin.x, campata_selected.boundingBox.center.y, raycaster.ray.origin.z);
+					dragging_train = true;
+					controls2D.enabled = false;
+					train_selected = campata_selected.parent;
+					info_train.__ul.setAttribute("style", "display: ");
+					buildInfoTrain_folder();
+					showTrainSelection();
+				}
+			});
+			if (train_selected !== undefined && dragging_train==false && duplicating_train==false){
+				var intersects = raycaster.intersectObjects([floor]);
+				if (intersects.length > 0) {
+					removeElFromScene("Helper");
+					train_selected = undefined;
+					campata_selected = undefined;
+					info_train.__ul.setAttribute("style", "display: none");
+					clear3DScene();
+				}
+			}
+		} );
+		
+		// rilascio click mouse
+		canvas2D.addEventListener("pointerup", () => {
+			if (start_pos!==undefined && end_pos!==undefined){
+				if (draw_walls_mode==true) {
+					drawWall(settings["WallHeight"],settings["WallDepth"]);
+				}
+				removeElFromScene("Start Point");
+				removeElFromScene("End Point");
+				scene2D.remove(line_temp);
+			} else if (dragging_wall==true){
+				dragging_wall=false;
+				controls2D.enabled = true;
+				start_pos=undefined;
+				wall_selected.geometry.translate(wall_selected.position.x, 0, wall_selected.position.z);
+				wall_selected.start_pos.x += wall_selected.position.x;
+				info_wall_selected.__folders["Start Position"].__controllers[0].updateDisplay();
+				wall_selected.start_pos.z += wall_selected.position.z;
+				info_wall_selected.__folders["Start Position"].__controllers[1].updateDisplay();
+				wall_selected.end_pos.x += wall_selected.position.x;
+				info_wall_selected.__folders["End Position"].__controllers[0].updateDisplay();
+				wall_selected.end_pos.z += wall_selected.position.z;
+				info_wall_selected.__folders["End Position"].__controllers[1].updateDisplay();
+				wall_selected.position.set(0,wall_selected.position.y, 0);
+			} else if(dragging_train==true) {
+				dragging_train =false;
+				controls2D.enabled = true;
+				start_pos=undefined;
+				train_selected.userData.start_p.x += train_selected.position.x;
+				train_selected.userData.start_p.z += train_selected.position.z;
+				train_selected.geometry.translate(train_selected.position.x, 0, train_selected.position.z);
+				train_selected.geometry.computeBoundingBox();
+				removeElFromScene("Helper");
+				train_selected.children.forEach(child =>{
+					child.boundingBox.center.x +=  train_selected.position.x;
+					child.boundingBox.center.y +=  1;
+					child.boundingBox.center.z +=  train_selected.position.z;
+					if(child.name !== campata_selected.name){
+						var geom = geom_from_obb(child.boundingBox);
+						var helper = new THREE.Line(geom, new THREE.LineBasicMaterial({color: 0x808080}));
+						helper.name = "Helper";
+						train_selected.add(helper);
+					}
+					child.remove(child.children[0]);
+					var sprite = new THREE.TextSprite({
+						text:  child.name,
+						fontFamily: 'Arial, Helvetica, sans-serif',
+						fontSize: 8,
+						color: '#000000',
+					});
+					sprite.name="Testo";
+					sprite.visible = train_selected.userData.showNames; 
+					child.position.x += train_selected.position.x;
+					child.position.z += train_selected.position.z;
+					child.add(sprite);
+				});
+				var geom = geom_from_obb(campata_selected.boundingBox);
+				var helper = new THREE.Line(geom, new THREE.LineBasicMaterial({color: 0xff0000}));
+				helper.name = "Helper";
+				train_selected.add(helper);
+				train_selected.position.set(0,0, 0);
+			} else if (duplicating_train==true){
+				var intersects = raycaster.intersectObjects([floor]);
+				if (intersects.length > 0) {
+					start_pos = intersects[0].point;
+					start_pos.y = train_selected.userData.Altezza;
+				}
+				duplicating_train=false;
+				var old_rot = train_selected.userData.Rotazione;
+				var old_campata_selected = campata_selected;
+				draw2Dtrain(
+					String.fromCharCode(97+settings.Treni).toUpperCase(), 
+					start_pos,
+					train_selected.userData.Lunghezza, 					
+					train_selected.userData.profondita,
+					train_selected.userData.Altezza, 
+					train_selected.userData.Campate, 
+					train_selected.userData.doppiaspalla, 
+					train_selected.userData.showNames, 
+					train_selected.userData.Livelli
+				);
+				get_trains();
+				var new_c_name =  String.fromCharCode(97+settings.Treni).toUpperCase() +"-"+ campata_selected.name.substring(campata_selected.name.indexOf("-") + 1);
+				all_trains.forEach(t=>{
+					t.children.forEach(c => {
+						if (c.name == new_c_name){
+							campata_selected = c;
+							train_selected = c.parent;
+						}
+					});
+				});
+				restore_rotation(old_rot);
+				campata_selected = old_campata_selected;
+				train_selected = campata_selected.parent;
+				showTrainSelection();
+				settings.Treni+=1;
+				all_trains_folder.__controllers.forEach(c=> {
+					if(c.property=="Treni"){
+						c.updateDisplay();
+					}
+				});	
+			}
+		} );
+		
+		// genera una geometria a partire da un OBB (Oriented Bounding Box https://threejs.org/docs/#examples/en/math/OBB )
+		function geom_from_obb(obb){
+			var y = obb.center.y;
+			var p1 = new THREE.Vector3(
+				obb.center.x-obb.halfSize.x,
+				y,
+				obb.center.z-obb.halfSize.z
+			).applyMatrix3(obb.rotation);
+			var p2 = new THREE.Vector3(
+				obb.center.x-obb.halfSize.x,
+				y,
+				obb.center.z+obb.halfSize.z
+			).applyMatrix3(obb.rotation);
+			var p3 = new THREE.Vector3(
+				obb.center.x+obb.halfSize.x,
+				y,
+				obb.center.z+obb.halfSize.z
+			).applyMatrix3(obb.rotation);
+			var p4 = new THREE.Vector3(
+				obb.center.x+obb.halfSize.x,
+				y,
+				obb.center.z-obb.halfSize.z
+			).applyMatrix3(obb.rotation);
+			var delta_x = (p1.x+p3.x)/2 - obb.center.x;
+			var delta_z = (p1.z+p3.z)/2 - obb.center.z;
+			p1.x -= delta_x;
+			p1.z -= delta_z;
+			p2.x -= delta_x;
+			p2.z -= delta_z;
+			p3.x -= delta_x;
+			p3.z -= delta_z;
+			p4.x -= delta_x;
+			p4.z -= delta_z;
+			var g = new THREE.BufferGeometry().setFromPoints([
+				p1,
+				p2,
+				p3,
+				p4,
+				p1
+			]);
+			return g;
+		}
+		
+		// Mostra il treno selezionato con in grigio e, se presente, la campata selezionata in rosso 
+		function showTrainSelection(){
+			removeElFromScene("Helper");
+			train_selected.children.forEach(child => {
+				var draw = false;
+				if(campata_selected == undefined ){
+					draw = true;
+				} else {
+					if (child.name !== campata_selected.name){
+						draw = true;
+					}
+				}
+				if (draw==true){
+					var geom = geom_from_obb(child.boundingBox);
+					var helper = new THREE.Line(geom, new THREE.LineBasicMaterial({color: 0x808080}));
+					helper.name = "Helper";
+					train_selected.add(helper);
+				}
+			});
+			if (campata_selected !== undefined){
+				var geom = geom_from_obb(campata_selected.boundingBox);
+				var helper = new THREE.Line(geom, new THREE.LineBasicMaterial({color: 0xff0000}));
+				helper.name = "Helper";
+				train_selected.add(helper);
+			}
+			showCampata3D();
+			buildGui3D();
+		
+		}
+		
+		// funzione che disegna un muro 
+		function drawWall(height, depth){
+			var dim = Math.sqrt(Math.pow((start_pos.x-end_pos.x), 2)+Math.pow((start_pos.z-end_pos.z), 2));
+			var geometry = new THREE.BoxGeometry( dim, height, depth );
+			geometry.dynamic = true;
+			var theta = Math.atan((start_pos.x-end_pos.x)/(start_pos.z-end_pos.z))*180/ Math.PI - 90;
+			geometry.rotateY(theta*Math.PI/180);
+			geometry.translate((start_pos.x+end_pos.x)/2,(1+height)/2, (start_pos.z+end_pos.z)/2);
+			var wall = new THREE.Mesh( geometry, wall_material );
+			wall.name=wall_name;
+			wall.start_pos = start_pos;
+			wall.end_pos = end_pos;
+			scene2D.add( wall );
+			wall.updateMatrix();
+			start_pos=undefined;
+			end_pos=undefined;
+			get_walls();
+			wall.geometry.attributes.position.needsUpdate = true;
+		}
+		
+		// funzione che popola i controlli della folder contenente le informazioni del treno selezionato
+		function buildInfoTrain_folder(){
+			var to_remove = [];
+			info_train.__controllers.forEach(c => to_remove.push(c));
+			to_remove.forEach(c => info_train.remove(c));
+			var info = {
+				name: train_selected.name.substring(train_selected.name.indexOf("-") + 1)
+			}
+			var utils_f = {
+				Delete: function(){
+					scene2D.remove(train_selected);
+					train_selected = undefined;
+					campata_selected = undefined;
+					info_train.__ul.setAttribute("style", "display: none");
+					settings.Treni-=1;
+					all_trains_folder.__controllers.forEach(c=> {
+						if(c.property=="Treni"){
+							c.updateDisplay();
+						}
+					});
+					clearGui3D();
+					clear3DScene();
+				},
+				Duplica: function(){
+					duplicating_train = true;
+				}
+			}
+			info_train.add(info, "name").onFinishChange(function(newVal){
+				train_selected.name = train_name+"-"+newVal;
+				train_selected.userData.id = newVal;
+				train_selected.children.forEach(child =>{
+					if (child.name != "Helper"){
+						var old_name = child.name;
+						var new_name = newVal+"-"+old_name.substring(old_name.indexOf("-") + 1);
+						child.name = new_name;
+						if (child.children.length>0){
+							child.children[0].text = new_name;
+						}
+					}
+				});
+				
+			}); 
+			
+			info_train.add(train_selected.userData, "Lunghezza").min(100).step(10).onChange(function(newVal){
+				var old_rot = train_selected.userData.Rotazione;
+				restore_rotation(-old_rot);
+				train_selected.geometry.computeBoundingSphere();
+				train_selected.userData.start_p = train_selected.geometry.boundingSphere.center;
+				train_selected.userData.start_p.x -= newVal/2;
+				train_selected.userData.start_p.z -= train_selected.userData.profondita/2;
+				removeElFromScene(train_selected.name);
+				draw2Dtrain(
+					train_selected.userData.id, 
+					train_selected.userData.start_p, 
+					newVal,
+					train_selected.userData.profondita, 
+					train_selected.userData.Altezza, 
+					train_selected.userData.Campate, 
+					train_selected.userData.doppiaspalla, 
+					train_selected.userData.showNames, 
+					train_selected.userData.Livelli
+					
+				);
+				restore_selection();
+				restore_rotation(old_rot);
+			});
+			
+			info_train.add(train_selected.userData, "profondita").name("Profondit&agrave").min(10).step(1).onChange(function(newVal){
+				var old_rot = train_selected.userData.Rotazione;
+				restore_rotation(-old_rot);
+				train_selected.geometry.computeBoundingSphere();
+				train_selected.userData.start_p = train_selected.geometry.boundingSphere.center;
+				train_selected.userData.start_p.x -= train_selected.userData.Lunghezza/2;
+				train_selected.userData.start_p.z -= newVal/2;
+				removeElFromScene(train_selected.name);
+				draw2Dtrain(
+					train_selected.userData.id, 
+					train_selected.userData.start_p,
+					train_selected.userData.Lunghezza, 					
+					newVal,
+					train_selected.userData.Altezza, 
+					train_selected.userData.Campate, 
+					train_selected.userData.doppiaspalla, 
+					train_selected.userData.showNames, 
+					train_selected.userData.Livelli
+				);
+				restore_selection();
+				restore_rotation(old_rot);
+			});
+			
+			info_train.add(train_selected.userData, "Campate").min(1).step(1).onChange(function(newVal){
+				var old_rot = train_selected.userData.Rotazione;
+				restore_rotation(-old_rot);
+				train_selected.geometry.computeBoundingSphere();
+				train_selected.userData.start_p = train_selected.geometry.boundingSphere.center;
+				train_selected.userData.start_p.x -= train_selected.userData.Lunghezza/2;
+				train_selected.userData.start_p.z -= train_selected.userData.profondita/2;
+				
+				removeElFromScene(train_selected.name);
+				draw2Dtrain(
+					train_selected.userData.id, 
+					train_selected.userData.start_p,
+					train_selected.userData.Lunghezza, 					
+					train_selected.userData.profondita, 
+					train_selected.userData.Altezza, 
+					newVal, 
+					train_selected.userData.doppiaspalla, 
+					train_selected.userData.showNames, 
+					train_selected.userData.Livelli
+				);
+				restore_selection();
+				restore_rotation(old_rot);
+			});
+			
+			info_train.add(train_selected.userData, "Altezza").min(5).step(1).onChange(function(newVal){
+				showTrainSelection();
+			});
+			
+			info_train.add(train_selected.userData, "Livelli").min(1).step(1).onChange(function(newVal){
+				showTrainSelection();
+			});
+			
+			info_train.add(train_selected.userData, "Rotazione").min(0).max(360).step(1).onChange(function(newVal){
+				var alpha = (newVal-this.initialValue)*Math.PI/180;
+				var alpha1 = newVal*Math.PI/180;
+				this.initialValue = newVal;
+				if (campata_selected !== undefined){
+					var xc = campata_selected.boundingBox.center.x;
+					var zc = campata_selected.boundingBox.center.z;
+				} else {
+					train_selected.geometry.computeBoundingSphere();
+					var xc = train_selected.geometry.boundingSphere.center.x;
+					var zc = train_selected.geometry.boundingSphere.center.z;
+				}
+				train_selected.geometry.rotateY(alpha);
+				train_selected.geometry.computeBoundingSphere();
+				var x = train_selected.userData.start_p.x;
+				var z = train_selected.userData.start_p.z;
+				train_selected.userData.start_p.x = (x-xc)*Math.cos(-alpha)-(z-zc)*Math.sin(-alpha)+xc;
+				train_selected.userData.start_p.z = (x-xc)*Math.sin(-alpha)+(z-zc)*Math.cos(-alpha)+zc;
+				train_selected.geometry.translate(
+					train_selected.userData.start_p.x-train_selected.geometry.attributes.position.array[0],
+					0,
+					train_selected.userData.start_p.z-train_selected.geometry.attributes.position.array[2]
+				);
+				
+				
+				train_selected.children.forEach(child =>{
+					if (child.name !== "Helper"){
+						var x = child.position.x;
+						var z = child.position.z;
+						child.boundingBox.rotation = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationY(alpha1));
+						child.position.x = (x-xc)*Math.cos(-alpha)-(z-zc)*Math.sin(-alpha)+xc;
+						child.position.z = (x-xc)*Math.sin(-alpha)+(z-zc)*Math.cos(-alpha)+zc;
+						child.boundingBox.center.x = child.position.x;
+						child.boundingBox.center.z = child.position.z;
+					}
+				});
+				restore_selection();
+				
+			});
+			
+			info_train.add(train_selected.userData, "doppiaspalla").name("Doppia Spalla").onChange(function(newVal){
+				var old_rot = train_selected.userData.Rotazione;
+				restore_rotation(-old_rot);
+				train_selected.geometry.computeBoundingSphere();
+				train_selected.userData.start_p = train_selected.geometry.boundingSphere.center;
+				train_selected.userData.start_p.x -= train_selected.userData.Lunghezza/2;
+				train_selected.userData.start_p.z -= train_selected.userData.profondita/2;
+				removeElFromScene(train_selected.name);
+				draw2Dtrain(
+					train_selected.userData.id, 
+					train_selected.userData.start_p,
+					train_selected.userData.Lunghezza,
+					train_selected.userData.profondita, 					
+					train_selected.userData.Altezza, 
+					train_selected.userData.Campate, 
+					newVal, 
+					train_selected.userData.showNames, 
+					train_selected.userData.Livelli
+				);
+				restore_selection();
+				restore_rotation(old_rot);
+			});
+			
+			info_train.add(train_selected.userData, "showNames").name("Mostra Nomi").onChange(function(newVal){
+				train_selected.userData.showNames = newVal;
+				train_selected.children.forEach( child =>{
+					if (child.name!=="Helper" && child.children.length>0){
+						var c = child.children[0];
+						if(c.name=="Testo"){
+							//child.parent.userData.showNames = newVal;
+							c.visible = newVal;
+						}	
+					}
+				});
+			});
+			info_train.add(utils_f, "Duplica");
+			info_train.add(utils_f, "Delete").name("Elimina Treno");
+			info_train.open();
+		}
+		
+		//funzione che ripristina la rotazione del treno
+		function restore_rotation(val){
+			var alpha = val*Math.PI/180;
+			train_selected.userData.Rotazione = val;
+			if (campata_selected !== undefined){
+				var xc = campata_selected.boundingBox.center.x;
+				var zc = campata_selected.boundingBox.center.z;
+			} else {
+				train_selected.geometry.computeBoundingSphere();
+				var xc = train_selected.geometry.boundingSphere.center.x;
+				var zc = train_selected.geometry.boundingSphere.center.z;
+			}
+			train_selected.geometry.rotateY(alpha);
+			train_selected.geometry.computeBoundingSphere();
+			var x = train_selected.userData.start_p.x;
+			var z = train_selected.userData.start_p.z;	
+			train_selected.userData.start_p.x = (x-xc)*Math.cos(-alpha)-(z-zc)*Math.sin(-alpha)+xc;
+			train_selected.userData.start_p.z = (x-xc)*Math.sin(-alpha)+(z-zc)*Math.cos(-alpha)+zc;
+			train_selected.geometry.translate(
+				train_selected.userData.start_p.x-train_selected.geometry.attributes.position.array[0],
+				0,
+				train_selected.userData.start_p.z-train_selected.geometry.attributes.position.array[2]
+			);
+			train_selected.children.forEach(child =>{
+				if (child.name !== "Helper"){
+					var x = child.position.x;
+					var z = child.position.z;
+					child.boundingBox.rotation = new THREE.Matrix3().setFromMatrix4(new THREE.Matrix4().makeRotationY(alpha));
+					child.position.x = (x-xc)*Math.cos(-alpha)-(z-zc)*Math.sin(-alpha)+xc;
+					child.position.z = (x-xc)*Math.sin(-alpha)+(z-zc)*Math.cos(-alpha)+zc;
+					child.boundingBox.center.x = child.position.x;
+					child.boundingBox.center.z = child.position.z;
+				}
+			});
+			restore_selection();
+		}
+		
+		// funzione che ripristina la selezione del treno e della campata
+		function restore_selection(){
+			var changed = false;
+			scene2D.traverse(child=>{
+				if(child.name==train_selected.name){
+					train_selected=child;
+				} else if(campata_selected!== undefined){
+					if(child.name==campata_selected.name){
+						campata_selected = child;
+						changed = true;
+					}
+				} 
+			});
+			if (changed==false) {
+				campata_selected = undefined;
+				clearGui3D();
+				clear3DScene();
+
+			}
+			showTrainSelection();
+		}
+		
+		// funzione che aggiorna gli array all_trains e all_campate;
+		function get_trains(){
+			all_trains = [];
+			scene2D.traverse(child =>{
+				if (child.name.startsWith(train_name)){
+					all_trains.push(child);
+				}
+			});
+			all_campate = [];
+			all_trains.forEach(t=>{
+				t.children.forEach(child => {
+					if (child.name !="Helper") { all_campate.push(child)}
+				});
+			});
+		}
+		
+		</script>
+		
+	</div>
+	<div id="canvas3D">
+		<script type='text/javascript'>
+		// variabili globali del editor 3D
+		var spalla_material = new THREE.MeshBasicMaterial( {color: 0x0000FF} );
+		var corrente_material = new THREE.MeshBasicMaterial( {color: 0xFFFF00} );
+		var traversino_material = new THREE.MeshBasicMaterial( {color: 0x808080} );
+		var colori = ["Verde", "Ocra", "Rosso"];
+		var interventi = ["Monitorare", "Sostiuire", "Altro"];
+		var spalla_name = "Spalla";
+		var corrente_name = "Corrente";
+		var traversino_name = "Traversino";
+		var canvas3D = document.getElementById("canvas3D");
+		canvas3D.innerWidth = window.innerWidth/2;
+		canvas3D.innerHeight = window.innerHeight;
+		var scene3D, camera3D, renderer3D, controls3D, stats3D, gui3D, axesHelper;
+		var liv_folder, current_folder;
+		var spalle = [];
+		var all_objects = [];
+		var idx_annotation = 1;
+		var add_annotation_mode = false;
+		
+		// avvio funzioni prncipali
+		Start3D();
+		Update3D();
+		
+		// settings della gui 3D
+		var settings3D = {
+			AddNew: function(){
+				add_annotation_mode=true;
+			}
+		}
+		
+		// Funzione per modificare la visualizzazione quando il canvas 3D viene ridimensionato
+		function onResize3D() {
+			canvas3D.innerWidth = window.innerWidth/2;
+			canvas3D.innerHeight = window.innerHeight;
+  			renderer3D.setSize( canvas2D.innerWidth, canvas2D.innerHeight );
+			camera3D.updateProjectionMatrix();
+  		}
+		
+		// funzione che crea la visualizzazione 3D all'avvio della pagina
+		function Start3D(){
+			// scena
+			scene3D = new THREE.Scene();
+			scene3D.name= "Scene3D";
+			// camera
+			camera3D = new THREE.PerspectiveCamera( 100, canvas3D.innerWidth / canvas3D.innerHeight, 0.1, 100000 );
+			camera3D.position.set(500,750,1000);
+			camera3D.updateProjectionMatrix();
+			camera3D.name = "Camera3D";
+			scene3D.add(camera3D);
+			// render	
+			renderer3D = new THREE.WebGLRenderer( {antialias: true} );
+			renderer3D.setSize( canvas2D.innerWidth, canvas2D.innerHeight );
+			renderer3D.setClearColor( 0x4f5f80 );
+			renderer3D.setPixelRatio( canvas3D.devicePixelRatio );
+			canvas3D.appendChild( renderer3D.domElement );
+			// controllo dei moviementi della camera
+			controls3D = new THREE.OrbitControls( camera3D, renderer3D.domElement  );
+			controls3D.addEventListener( 'change', Render3D );
+			controls3D.target.set(500, 0, 500);
+			controls3D.update();
+			// statistiche fps in alto a sinistra
+			stats3D = new Stats();
+			stats3D.domElement.style.position = 'absolute';
+			stats3D.domElement.style.top = '2px';
+			var l = canvas3D.offsetLeft;
+			stats3D.domElement.style.left = '2px';
+			canvas3D.appendChild( stats3D.domElement );
+			// chiama onResize3D() quando viene modificata la dimensione della pagina
+			window.addEventListener( 'resize', onResize3D, false );
+			// helper per conoscere l'orientamento degli assi
+			axesHelper = new THREE.AxesHelper( 500 );
+			axesHelper.name = "axesHelper";
+			scene3D.add( axesHelper );
+		}
+		
+		// funzione che costruisce la GUI dell'editor 3D quando viene selezionata una campata
+		function buildGui3D(){
+			clearGui3D();
+			// folder per editare la campata
+			var edit_folder = gui3D.addFolder("Edit Campata");
+			edit_folder.add(campata_selected.userData, "Altezza").min(5).step(1).onChange(function(newVal){
+				showCampata3D();
+				liv_folder.__controllers.forEach(c =>{
+					c.__max = newVal;
+					c.updateDisplay();
+				});
+			});
+			edit_folder.add(campata_selected.userData, "Livelli").min(1).step(1).onChange(function(newVal){
+				showCampata3D();
+				var to_remove = [];
+				liv_folder.__controllers.forEach(c =>{
+					to_remove.push(c);
+				});
+				to_remove.forEach(c =>{
+					liv_folder.remove(c);
+				});
+				for (var key in campata_selected.userData.AltezzeLivelli){
+					liv_folder.add(campata_selected.userData.AltezzeLivelli, key).onChange(function(newVal){
+						showCampata3D();
+					});
+				}
+			});
+			liv_folder = edit_folder.addFolder("Livelli");
+			for (var key in campata_selected.userData.AltezzeLivelli){
+				liv_folder.add(campata_selected.userData.AltezzeLivelli, key).min(0).max(campata_selected.userData.Altezza).onChange(function(newVal){
+					showCampata3D();
+				});
+			}
+			gui3D.add(settings3D, "AddNew").name("Aggiungi Nuova Annotazione");
+			UpdateAnnotazioniGUI();
+		}
+		
+		// funzione che modifica la gui 3D al variare del numero di annotazioni presenti
+		function UpdateAnnotazioniGUI(){
+			var to_remove = [];
+			for(var key in gui3D.__folders){
+				if(key.includes("Annotazione")){
+					to_remove.push(key);
+				}
+			}
+			to_remove.forEach(child => {
+				gui3D.__ul.removeChild(gui3D.__folders[child].domElement.parentNode);
+				delete gui3D.__folders[child];
+			});
+			
+			var to_delete = [];
+			
+			for(var key in campata_selected.userData.Annotazioni){
+				var nome = campata_selected.userData.Annotazioni[key].Oggetto.name;
+				if (scene3D.getObjectByName(nome) != undefined){
+					var folder_name = "Annotazione "+key;
+					var current_folder = gui3D.addFolder(folder_name);
+					campata_selected.userData.Annotazioni[key].Oggetto = scene3D.getObjectByName(nome);
+					campata_selected.userData.Annotazioni[key].Oggetto.geometry.computeBoundingBox();
+					var bb = campata_selected.userData.Annotazioni[key].Oggetto.geometry.boundingBox;
+					var center = campata_selected.userData.Annotazioni[key].Oggetto.position;
+					current_folder.add(campata_selected.userData.Annotazioni[key], "Livello", colori).onFinishChange(function(newVal){
+						drawAnnotation(this.object);
+					});
+					var pos = current_folder.addFolder(	"Posizione "+nome);
+					pos.add(campata_selected.userData.Annotazioni[key]["posizione"], "x").min(center.x+bb.min.x).max(center.x+bb.max.x).onChange(function(newVal){
+						var obj = scene3D.getObjectByName("Annotazione "+this.object.parentID);
+						obj.position.x = newVal;
+					});
+					pos.add(campata_selected.userData.Annotazioni[key]["posizione"], "y").min(center.y+bb.min.y).max(center.y+bb.max.y).onChange(function(newVal){
+						var obj = scene3D.getObjectByName("Annotazione "+this.object.parentID);
+						obj.position.y = newVal;
+					});
+					pos.add(campata_selected.userData.Annotazioni[key]["posizione"], "z").min(center.z+bb.min.z).max(center.z+bb.max.z).onChange(function(newVal){
+						var obj = scene3D.getObjectByName("Annotazione "+this.object.parentID);
+						obj.position.z = newVal;
+					});
+					current_folder.add(campata_selected.userData.Annotazioni[key], "Intervento", interventi);
+					current_folder.add(campata_selected.userData.Annotazioni[key], "Nota");
+					current_folder.add(campata_selected.userData.Annotazioni[key], "Elimina");
+					drawAnnotation(campata_selected.userData.Annotazioni[key]);
+				} else if (UpdateAnnotazioniGUI.caller.name!="EliminaAnnotazione"){ 
+					console.log(UpdateAnnotazioniGUI.caller.name);
+					// se la funzione chiamante è "EliminaAnnotazione" ho già mostrato l'avviso
+					window.alert("ATTENZIONE! \u00C8 stato eliminato l'oggetto \""+
+					campata_selected.userData.Annotazioni[key].Oggetto.name+
+					"\" contenente l'Annotazione "+key);
+					to_delete.push(key);
+				}
+			}
+			
+			if(to_delete.length>0){
+				to_delete.forEach(el =>{
+					if (campata_selected.userData.Annotazioni[el] !== undefined) {
+						campata_selected.userData.Annotazioni[el].Elimina();
+					}
+				});
+			}
+		}
+		
+		// funzione di update della scena 3D
+		function Update3D(){
+			controls3D.update();
+			stats3D.update();
+			Render3D();
+			requestAnimationFrame( Update3D );
+		}
+		
+		// funzione di render della scena 3D
+		function Render3D(){
+			renderer3D.render(scene3D, camera3D);
+		}
+		
+		// funzione per la visualizzazione del muro selezionato in 3D
+		function showWall3D(){
+			clear3DScene();
+			var el_selected = wall_selected.clone();
+			el_selected.material = wall_material;
+			scene3D.add(el_selected);
+		}
+		
+		// funzione per ripulire la scena 3D da tutti gli elementi diversi da camera e helper degli assi
+		function clear3DScene(){
+			var to_remove = [];
+			scene3D.children.forEach(child =>{
+				if(child.name!=camera3D.name && child.name!=axesHelper.name){
+					to_remove.push(child);
+				}
+			});
+			to_remove.forEach(child => {
+				scene3D.remove(child);
+			});
+
+		}
+		
+		// funzione per visualizzare la campata selezionata in 3D
+		function showCampata3D(){
+			clear3DScene();
+			if(campata_selected.userData.Altezza == undefined){campata_selected.userData.Altezza=train_selected.userData.Altezza}
+			var g = geom_from_obb(campata_selected.boundingBox);
+			spalle = [];
+			if(campata_selected.userData.Livelli == undefined){
+				campata_selected.userData.Livelli=train_selected.userData.Livelli
+				campata_selected.userData.AltezzeLivelli={};
+			} 
+			if ( campata_selected.userData.Livelli != Object.keys(campata_selected.userData.AltezzeLivelli).length) {
+				campata_selected.userData.AltezzeLivelli={};
+				var interval = campata_selected.userData.Altezza/campata_selected.userData.Livelli;
+				for(var n = 1; n<=campata_selected.userData.Livelli; n++){
+					campata_selected.userData.AltezzeLivelli[n.toString()] = interval*n -5;
+				}
+			}
+			if(campata_selected.userData.Annotazioni == undefined){ campata_selected.userData.Annotazioni = {} }
+			idx_annotation = Object.keys(campata_selected.userData.Annotazioni).length +1;
+			var in_corr = false;
+			var word = "Sx";
+			for (var idx = 0; idx<(g.attributes.position.array.length-3); idx=idx+3){
+				var spalla = drawSpallaPP(g.attributes.position.array[idx], campata_selected.userData.Altezza, g.attributes.position.array[idx+2]);
+				spalla.name = campata_selected.name+"-"+spalla_name+"-"+(idx/3+1);
+				var theta = Math.atan(
+					(g.attributes.position.array[idx]-g.attributes.position.array[idx+3])/
+					(g.attributes.position.array[idx+2]-g.attributes.position.array[idx+5])
+				)*180/ Math.PI - 90;
+				spalla.rotation.y = theta*Math.PI/180;
+				scene3D.add(spalla);
+				resetAnnPos(spalla)
+				var s_p = new THREE.Vector3(g.attributes.position.array[idx], 0, g.attributes.position.array[idx+2]);
+				var e_p = new THREE.Vector3(g.attributes.position.array[idx+3], 0, g.attributes.position.array[idx+5]);
+				var h_min  = 5;
+				if(idx==3){
+					word="Front";
+				} else if(idx==6){
+					word="Dx";
+				} else if (idx==9){
+					word="Back";
+				}
+				for(key in  campata_selected.userData.AltezzeLivelli){
+					if(in_corr==true){
+						var corr = drawCorrentePP(s_p, e_p, campata_selected.userData.AltezzeLivelli[key]);
+						corr.name = campata_selected.name+"-"+corrente_name+"-"+word+"-"+key;
+						scene3D.add(corr);
+						resetAnnPos(corr);
+					} else {
+						if (key=="1"){
+							var to = drawTraversinoOrPP(s_p, e_p, h_min);
+							to.name = campata_selected.name+"-"+traversino_name+"Orizzontale-"+word+"-"+0;
+							scene3D.add(to);
+							resetAnnPos(to);
+						}
+						var to = drawTraversinoOrPP(s_p, e_p, campata_selected.userData.AltezzeLivelli[key]);
+						to.name = campata_selected.name+"-"+traversino_name+"Orizzontale-"+word+"-"+key;
+						scene3D.add(to);
+						resetAnnPos(to);
+						if (idx==0){
+							var td = drawTraversinoDiagPP(e_p, s_p, campata_selected.userData.AltezzeLivelli[key], h_min);
+						} else {
+							var td = drawTraversinoDiagPP(s_p, e_p, campata_selected.userData.AltezzeLivelli[key], h_min);
+						}
+						td.name = campata_selected.name+"-"+traversino_name+"Diagonale-"+word+"-"+key;
+						scene3D.add(td);
+						resetAnnPos(td);
+						h_min = campata_selected.userData.AltezzeLivelli[key];
+					}
+				}
+				in_corr = ! in_corr;
+			}
+			UpdateAnnotazioniGUI();
+		}
+		
+		//funzione che setta nuovamente la y di correnti e traversini spostati
+		function resetAnnPos(newobj){
+			for(var key in campata_selected.userData.Annotazioni){
+				var a = campata_selected.userData.Annotazioni[key];
+				if (a.Oggetto.name == newobj.name){
+					campata_selected.userData.Annotazioni[key].posizione.y = a.posizione.y-a.Oggetto.position.y+newobj.position.y;
+				}
+			}
+		}
+		
+		// funzione per disegnare una spalla del portapallet
+		function drawSpallaPP(pos_x, h, pos_z){
+			var geometry = new THREE.BoxGeometry( 10, h, 10 );
+			var spalla = new THREE.Mesh( geometry, spalla_material );
+			spalla.position.set(pos_x, (1+h)/2, pos_z);
+			return spalla;
+		}
+		
+		// funzione per disegnare un corrente del portapallet 
+		function drawCorrentePP(pos_s, pos_e, h){
+			var dim = pos_s.distanceTo(pos_e)-10;
+			var geometry = new THREE.BoxGeometry( dim, 10, 10 );
+			var corrente = new THREE.Mesh( geometry, corrente_material );
+			corrente.position.set((pos_s.x+pos_e.x)/2, h, (pos_s.z+pos_e.z)/2);
+			var theta = Math.atan((pos_s.x-pos_e.x)/(pos_s.z-pos_e.z))*180/ Math.PI - 90;
+			corrente.rotation.y = theta*Math.PI/180;
+			return corrente;
+		}
+		
+		// funzione per disegnare un traversino orizzontale
+		function drawTraversinoOrPP(pos_s, pos_e, h){
+			var dim = pos_s.distanceTo(pos_e)-1.5;
+			var geometry = new THREE.CylinderGeometry( 3, 3, dim, 32 );
+			var traversinoOr = new THREE.Mesh( geometry, traversino_material );
+			traversinoOr.position.set((pos_s.x+pos_e.x)/2, h, (pos_s.z+pos_e.z)/2);
+			traversinoOr.rotation.x = 90*Math.PI/180;
+			var theta = Math.atan((pos_s.z-pos_e.z)/(pos_s.x-pos_e.x))*180/ Math.PI + 90;
+			traversinoOr.rotation.z = theta*Math.PI/180;
+			return traversinoOr;
+		}
+		
+		// funzione per disegnare un traversino diagonale 
+		function drawTraversinoDiagPP(pos_s, pos_e, h_max, h_min){
+			var dim = Math.sqrt( Math.pow(pos_s.distanceTo(pos_e)-1.5, 2) + Math.pow(h_max-h_min-1.5, 2) );
+			var geometry = new THREE.CylinderGeometry( 3, 3, dim, 32 );
+			var traversinoDiag = new THREE.Mesh( geometry, traversino_material );
+			traversinoDiag.position.set((pos_s.x+pos_e.x)/2, (h_max+h_min)/2, (pos_s.z+pos_e.z)/2);
+			var theta = Math.atan(
+				(h_max-h_min)/Math.sqrt( Math.pow(pos_s.z-pos_e.z, 2) + Math.pow(pos_s.x-pos_e.x, 2) )
+			);
+			var y = h_max-(dim/2*Math.cos(theta))-1.5;
+			traversinoDiag.lookAt(pos_e.x, y, pos_e.z );
+			return traversinoDiag;
+		}
+		
+		//funzione per ripulire la GUI 3D
+		function clearGui3D() {
+  			if ( gui3D ) {
+				canvas3D.removeChild(gui3D.domElement);
+				gui3D == undefined;
+			}
+			gui3D = new dat.GUI( { autoPlace: false } );
+			gui3D.domElement.setAttribute("style", "position: absolute; right: 2px; top: 2px");
+			canvas3D.appendChild(gui3D.domElement);
+			gui3D.domElement.id = 'gui3D';
+  			gui3D.open();
+  		}
+		
+		// funzione per popolare l'array "all_objects" con tutti gli oggetti della campata selezionata 
+		function get_all_objects(){
+			all_objects = [];
+			scene3D.traverse(child => {
+				if(child.name!=camera3D.name && child.name!=axesHelper.name && child.name!="Scene3D"){
+					child.geometry.computeBoundingBox();
+					child.geometry.computeBoundingSphere();
+					all_objects.push(child);
+				}
+			});
+		}
+		
+		// funzione per disegnare una annotazione in corrispondenza dell'oggetto selezionato 
+		function drawAnnotation(sets){
+			scene3D.remove(scene3D.getObjectByName("Annotazione "+sets.id));
+			geometry = new THREE.SphereGeometry( 10, 32, 32 );
+			var colors = {
+				"Verde": 0x00ff00,
+				"Ocra": 0xAEA04B,
+				"Rosso": 0xff0000
+			}
+			var material = new THREE.MeshBasicMaterial( {color: colors[sets.Livello]} );
+			var sphere = new THREE.Mesh( geometry, material );
+			sphere.name = "Annotazione "+sets.id;
+			sphere.position.set(
+				sets["posizione"].x,
+				sets["posizione"].y, 
+				sets["posizione"].z
+			);
+			scene3D.add(sphere);
+		}
+		
+		
+		// gestione eventi mouse
+		// variabili
+		var raycaster3D = new THREE.Raycaster();
+		var mouse3D = new THREE.Vector2();
+		var point_found = false;
+		
+		
+		// eventi
+		// movimento del puntatore
+		canvas3D.addEventListener("pointermove", event => {
+			mouse3D.x = ( event.clientX / canvas3D.innerWidth ) * 2 - 3;
+			mouse3D.y = - ( event.clientY / canvas3D.innerHeight ) * 2 + 1;
+			raycaster3D.setFromCamera(mouse3D, camera3D);
+		});
+
+		// pressione click mouse
+		canvas3D.addEventListener("pointerdown", () => {
+			if(add_annotation_mode==true){
+				get_all_objects();
+				var intersects = raycaster3D.intersectObjects(all_objects);
+				if (intersects.length > 0) {
+					controls3D.enabled = false;
+					campata_selected.userData.Annotazioni[idx_annotation] = {
+						id: idx_annotation,
+						Livello: "Verde",
+						posizione: new THREE.Vector3(
+							intersects[0].point.x,
+							intersects[0].point.y,
+							intersects[0].point.z
+						),
+						Intervento: "Monitorare",
+						Nota: "Aggiungi Nota",
+						Elimina: function EliminaAnnotazione(){
+							var object = scene3D.getObjectByName("Annotazione "+this.id);
+							if (object!= undefined){object.parent.remove(object)}
+							for(var key in campata_selected.userData.Annotazioni){
+								if (key >this.id ){
+									campata_selected.userData.Annotazioni[key].id -=1;
+									campata_selected.userData.Annotazioni[key-1] = campata_selected.userData.Annotazioni[key];
+									var obj = scene3D.getObjectByName("Annotazione "+key);
+									if(obj!=undefined){obj.name = "Annotazione "+(key-1)}
+								}
+							}
+							delete campata_selected.userData.Annotazioni[key];
+							idx_annotation -= 1;
+							UpdateAnnotazioniGUI();
+						},
+						Oggetto: intersects[0].object
+					};
+					campata_selected.userData.Annotazioni[idx_annotation].posizione.parentID = idx_annotation;
+					point_found=true;
+					idx_annotation += 1;
+					UpdateAnnotazioniGUI();
+				}
+			}
+		} );
+		
+		// rilascio click mouse
+		document.addEventListener("pointerup", () => {
+			if(add_annotation_mode==true &&  point_found==true){
+				add_annotation_mode=false;
+				controls3D.enabled = true;
+				point_found=false;
+			}
+		} );
+		
+		</script>
+	</div>
+	</body>
+</html>
