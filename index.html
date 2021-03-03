@@ -36,6 +36,7 @@
 		<script src="lib/three.text-texture.js"></script>
 		<script src="lib/three.text-sprite.js"></script>
 		<script src="lib/OBB.js"></script>
+			
 	</head>
 	<body>
 	<div id="canvas2D">
@@ -51,12 +52,12 @@
 		var wall_material = new THREE.MeshBasicMaterial( {color: 0x000000} );
 		var wall_selected_material = new THREE.MeshBasicMaterial( {color: 0x616161} );
 		var floor;
-		var height=1000;
-		var width=1000;
+		var height=150000;
+		var width=150000;
 		var start_pos_f, end_pos_f, parameters_wall_folder;
 		var settings = {
-			Width: 1000,
-			Height: 1000,
+			Width: 150000,
+			Height: 150000,
 			DrawWalls: false,
 			WallHeight: 5,
 			WallDepth: 3,
@@ -65,15 +66,15 @@
 						end:{ x:50, y:50, z:50}
 			},
 			Treni: 0,
-			CampatexTreno: 3,
-			LunghezzaTreni: 800,
-			ProfonditaTreni: 100,
+			CampatexTreno: 20,
+			LunghezzaTreni: 135000,
+			ProfonditaTreni: 1000,
 			DoppiaSpalla: false,
-			AltezzaSpalle:500,
+			AltezzaSpalle:5000,
 			showNames:false,
-			LivellixCampata: 3
+			LivellixCampata: 7
 		}
-		var trains_folder, all_trains_folder, draw_trains_mode, trains, train_portapallet, train_selected, campata_selected, dragging_train;
+		var trains_folder, all_trains_folder, draw_trains_mode, trains, train_portapallet, info_train, train_selected, campata_selected, dragging_train;
 		var all_campate = [];
 		var all_trains = [];
 		var functions;
@@ -85,8 +86,8 @@
 		var campata_name = "Campata";
 		
 		// Avvio delle funzioni principali
-		Start2D();
-		buildGui2D();
+		Start2D();		
+		buildGui2D();	
 		Update2D();
 		
 		// Funzione per modificare la visualizzazione quando il canvas2D viene ridimensionato
@@ -110,9 +111,9 @@
 			scene2D = new THREE.Scene();
 			scene2D.name= "Scene2D";
 			// camera
-			camera2D = new THREE.OrthographicCamera( canvas2D.innerWidth  / - 2, canvas2D.innerWidth  / 2, canvas2D.innerHeight / 2, canvas2D.innerHeight / - 2, 0.0001, 1000 );
-			camera2D.position.set(500,1000,500);
-			camera2D.zoom=0.5;
+			camera2D = new THREE.OrthographicCamera(100* canvas2D.innerWidth  / - 2, 100*canvas2D.innerWidth  / 2, 100*canvas2D.innerHeight / 2,100* canvas2D.innerHeight / - 2, 0, 9999999999999999999  );
+			camera2D.position.set(75000, 100000, 75000);
+			camera2D.zoom=0.4;
 			camera2D.updateProjectionMatrix();
 			camera2D.name = "Camera2D";
 			scene2D.add(camera2D);
@@ -125,7 +126,7 @@
 			// controllo dei moviementi della camera
 			controls2D = new THREE.OrbitControls( camera2D, renderer2D.domElement  );
 			controls2D.addEventListener( 'change', Render2D );
-			controls2D.target.set(500, 0, 500);
+			controls2D.target.set(75000, 0, 75000);
 			controls2D.update();
 			// statistiche fps in alto a sinistra
 			stats2D = new Stats();
@@ -135,19 +136,24 @@
 			// chiama onResize2D() quando viene modificata la dimensione della pagina
 			window.addEventListener( 'resize', onResize2D, false );
 			// chiamata a funzione che disegna il pavimento
-			drawFloor();
+			drawFloor();		
 		}
 
 		// Funzioni per l'aggiornamento e il render della pagina
 		function Update2D() {
+			//camera2D.updateProjectionMatrix();
 			camera2D.position.setX(controls2D.target.x);
 			camera2D.position.setZ(controls2D.target.z);
 			controls2D.update();
 			stats2D.update();
 			// Setta la grandezza del font della scritta all'interno delle campate in base allo zoom
 			if(all_campate.length>0 ){
-				all_campate.forEach( c =>{
-					if (c.children.length>0) {c.children[0].fontSize= 8+ (10/camera2D.zoom)}
+				all_campate.forEach( camp =>{
+					camp.children.forEach(obj =>{
+						if(obj.name=="Testo") {
+							obj.fontSize= 1500/camera2D.zoom;
+						}
+					});
 				});
 			}
 			Render2D();
@@ -356,7 +362,7 @@
 			});
 			train_selected = undefined;
 			campata_selected = undefined;
-			info_train.__ul.setAttribute("style", "display: none");
+			if (info_train !== undefined){ info_train.__ul.setAttribute("style", "display: none")}
 			all_campate = [];
 			toRemove.forEach(el => {scene2D.remove(el);});
 			var interval_z = height/(treni+1);
@@ -411,13 +417,7 @@
 				campata.position.set(center.x, center.y, center.z);
 				campata.boundingBox = box;
 				campata.name = c_name;
-				var sprite = new THREE.TextSprite({
-					text:  c_name,
-					fontFamily: 'Arial, Helvetica, sans-serif',
-					fontSize: 8,
-					color: '#000000',
-				});
-				sprite.name="Testo";
+				var sprite = createSprite(c_name);
 				sprite.visible = showNames; 
 				campata.add(sprite);
 				campate_treno.push(campata);
@@ -446,6 +446,20 @@
 			train_mesh.userData = u_data;
 			scene2D.add(train_mesh);
 			all_campate = all_campate.concat(campate_treno);	
+		}
+		
+		// crea testo
+		function createSprite(name){
+			var sprite = new THREE.TextSprite({
+				text:  name,
+				fontFamily: 'Arial, Helvetica, sans-serif',
+				fontSize: 1000, //+ (10/camera2D.zoom),
+				color: '#000000',
+				
+			});
+			sprite.name="Testo";
+			sprite.position.setY(camera2D.position.y-10000);
+			return sprite;
 		}
 		
 		// disegna il pavimento
@@ -704,14 +718,14 @@
 						helper.name = "Helper";
 						train_selected.add(helper);
 					}
-					child.remove(child.children[0]);
-					var sprite = new THREE.TextSprite({
-						text:  child.name,
-						fontFamily: 'Arial, Helvetica, sans-serif',
-						fontSize: 8,
-						color: '#000000',
+					var to_remove;
+					child.children.forEach(c=>{
+						if(c.name=="Testo"){
+							to_remove=c;
+						}
 					});
-					sprite.name="Testo";
+					child.remove(to_remove);	
+					var sprite = createSprite(child.name);
 					sprite.visible = train_selected.userData.showNames; 
 					child.position.x += train_selected.position.x;
 					child.position.z += train_selected.position.z;
@@ -835,7 +849,6 @@
 			}
 			showCampata3D();
 			buildGui3D();
-		
 		}
 		
 		// funzione che disegna un muro 
@@ -1014,6 +1027,11 @@
 						child.position.z = (x-xc)*Math.sin(-alpha)+(z-zc)*Math.cos(-alpha)+zc;
 						child.boundingBox.center.x = child.position.x;
 						child.boundingBox.center.z = child.position.z;
+						child.children.forEach(c=>{
+							if(c.name!="Testo"){
+								c.rotation.y += alpha;
+							}
+						});
 					}
 				});
 				restore_selection();
@@ -1092,6 +1110,11 @@
 					child.position.z = (x-xc)*Math.sin(-alpha)+(z-zc)*Math.cos(-alpha)+zc;
 					child.boundingBox.center.x = child.position.x;
 					child.boundingBox.center.z = child.position.z;
+					child.children.forEach(c=>{
+						if(c.name!="Testo"){
+							c.rotation.y= alpha;
+						}
+					});
 				}
 			});
 			restore_selection();
@@ -1141,9 +1164,9 @@
 	<div id="canvas3D">
 		<script type='text/javascript'>
 		// variabili globali del editor 3D
-		var spalla_material = new THREE.MeshBasicMaterial( {color: 0x0000FF} );
-		var corrente_material = new THREE.MeshBasicMaterial( {color: 0xFFFF00} );
-		var traversino_material = new THREE.MeshBasicMaterial( {color: 0x808080} );
+		var spalla_material = new THREE.MeshBasicMaterial( {color: 0x0000FF, transparent:true} );
+		var corrente_material = new THREE.MeshBasicMaterial( {color: 0xFFFF00, transparent:true} );
+		var traversino_material = new THREE.MeshBasicMaterial( {color: 0x808080, transparent:true} );
 		var colori = ["Verde", "Ocra", "Rosso"];
 		var interventi = ["Monitorare", "Sostiuire", "Altro"];
 		var spalla_name = "Spalla";
@@ -1158,6 +1181,11 @@
 		var all_objects = [];
 		var idx_annotation = 1;
 		var add_annotation_mode = false;
+		var colors = {
+			"Verde": 0x00ff00,
+			"Ocra": 0xAEA04B,
+			"Rosso": 0xff0000
+		}
 		
 		// avvio funzioni prncipali
 		Start3D();
@@ -1184,8 +1212,8 @@
 			scene3D = new THREE.Scene();
 			scene3D.name= "Scene3D";
 			// camera
-			camera3D = new THREE.PerspectiveCamera( 100, canvas3D.innerWidth / canvas3D.innerHeight, 0.1, 100000 );
-			camera3D.position.set(500,750,1000);
+			camera3D = new THREE.PerspectiveCamera( 100, canvas3D.innerWidth / canvas3D.innerHeight, 0.00001, 10000000000 );
+			camera3D.position.set(75000,75000,150000);
 			camera3D.updateProjectionMatrix();
 			camera3D.name = "Camera3D";
 			scene3D.add(camera3D);
@@ -1198,7 +1226,7 @@
 			// controllo dei moviementi della camera
 			controls3D = new THREE.OrbitControls( camera3D, renderer3D.domElement  );
 			controls3D.addEventListener( 'change', Render3D );
-			controls3D.target.set(500, 0, 500);
+			controls3D.target.set(75000, 0, 75000);
 			controls3D.update();
 			// statistiche fps in alto a sinistra
 			stats3D = new Stats();
@@ -1210,7 +1238,7 @@
 			// chiama onResize3D() quando viene modificata la dimensione della pagina
 			window.addEventListener( 'resize', onResize3D, false );
 			// helper per conoscere l'orientamento degli assi
-			axesHelper = new THREE.AxesHelper( 500 );
+			axesHelper = new THREE.AxesHelper( 50000 );
 			axesHelper.name = "axesHelper";
 			scene3D.add( axesHelper );
 		}
@@ -1236,20 +1264,39 @@
 				to_remove.forEach(c =>{
 					liv_folder.remove(c);
 				});
-				for (var key in campata_selected.userData.AltezzeLivelli){
-					liv_folder.add(campata_selected.userData.AltezzeLivelli, key).onChange(function(newVal){
-						showCampata3D();
-					});
-				}
+				editLivFolder();
 			});
 			liv_folder = edit_folder.addFolder("Livelli");
-			for (var key in campata_selected.userData.AltezzeLivelli){
-				liv_folder.add(campata_selected.userData.AltezzeLivelli, key).min(0).max(campata_selected.userData.Altezza).onChange(function(newVal){
-					showCampata3D();
-				});
-			}
+			editLivFolder();
 			gui3D.add(settings3D, "AddNew").name("Aggiungi Nuova Annotazione");
 			UpdateAnnotazioniGUI();
+		}
+		
+		//funzione che popola la folder dei livelli
+		function editLivFolder(){
+			for (var key in campata_selected.userData.AltezzeLivelli){
+				if(key==1){
+					var min = 0;
+				} else {
+					var min = campata_selected.userData.AltezzeLivelli[key-1];
+				}
+				if(key==campata_selected.userData.Livelli){
+					var max = campata_selected.userData.Altezza;
+				} else {
+					var max = campata_selected.userData.AltezzeLivelli[parseInt(key)+1];
+				}
+				liv_folder.add(campata_selected.userData.AltezzeLivelli, key).min(min+50).max(max).onChange(function(newVal){
+					showCampata3D();
+					if (this.property=="1" && campata_selected.userData.Livelli>1){
+						liv_folder.__controllers["1"].__min = newVal; 
+					} else if (parseInt(this.property) == campata_selected.userData.Livelli && campata_selected.userData.Livelli >1 ){
+						liv_folder.__controllers[parseInt(this.property)-2].__max = newVal; 
+					} else {
+						liv_folder.__controllers[this.property].__min = newVal; 
+						liv_folder.__controllers[parseInt(this.property)-2].__max = newVal; 
+					}
+				});
+			}
 		}
 		
 		// funzione che modifica la gui 3D al variare del numero di annotazioni presenti
@@ -1264,31 +1311,27 @@
 				gui3D.__ul.removeChild(gui3D.__folders[child].domElement.parentNode);
 				delete gui3D.__folders[child];
 			});
-			
 			var to_delete = [];
-			
 			for(var key in campata_selected.userData.Annotazioni){
 				var nome = campata_selected.userData.Annotazioni[key].Oggetto.name;
 				if (scene3D.getObjectByName(nome) != undefined){
 					var folder_name = "Annotazione "+key;
 					var current_folder = gui3D.addFolder(folder_name);
 					campata_selected.userData.Annotazioni[key].Oggetto = scene3D.getObjectByName(nome);
-					campata_selected.userData.Annotazioni[key].Oggetto.geometry.computeBoundingBox();
-					var bb = campata_selected.userData.Annotazioni[key].Oggetto.geometry.boundingBox;
-					var center = campata_selected.userData.Annotazioni[key].Oggetto.position;
+					var bb = new THREE.Box3().setFromObject(campata_selected.userData.Annotazioni[key].Oggetto);
 					current_folder.add(campata_selected.userData.Annotazioni[key], "Livello", colori).onFinishChange(function(newVal){
 						drawAnnotation(this.object);
 					});
 					var pos = current_folder.addFolder(	"Posizione "+nome);
-					pos.add(campata_selected.userData.Annotazioni[key]["posizione"], "x").min(center.x+bb.min.x).max(center.x+bb.max.x).onChange(function(newVal){
+					pos.add(campata_selected.userData.Annotazioni[key]["posizione"], "x").min(bb.min.x).max(bb.max.x).onChange(function(newVal){
 						var obj = scene3D.getObjectByName("Annotazione "+this.object.parentID);
 						obj.position.x = newVal;
 					});
-					pos.add(campata_selected.userData.Annotazioni[key]["posizione"], "y").min(center.y+bb.min.y).max(center.y+bb.max.y).onChange(function(newVal){
+					pos.add(campata_selected.userData.Annotazioni[key]["posizione"], "y").min(bb.min.y).max(bb.max.y).onChange(function(newVal){
 						var obj = scene3D.getObjectByName("Annotazione "+this.object.parentID);
 						obj.position.y = newVal;
 					});
-					pos.add(campata_selected.userData.Annotazioni[key]["posizione"], "z").min(center.z+bb.min.z).max(center.z+bb.max.z).onChange(function(newVal){
+					pos.add(campata_selected.userData.Annotazioni[key]["posizione"], "z").min(bb.min.z).max(bb.max.z).onChange(function(newVal){
 						var obj = scene3D.getObjectByName("Annotazione "+this.object.parentID);
 						obj.position.z = newVal;
 					});
@@ -1297,15 +1340,13 @@
 					current_folder.add(campata_selected.userData.Annotazioni[key], "Elimina");
 					drawAnnotation(campata_selected.userData.Annotazioni[key]);
 				} else if (UpdateAnnotazioniGUI.caller.name!="EliminaAnnotazione"){ 
-					console.log(UpdateAnnotazioniGUI.caller.name);
 					// se la funzione chiamante è "EliminaAnnotazione" ho già mostrato l'avviso
 					window.alert("ATTENZIONE! \u00C8 stato eliminato l'oggetto \""+
 					campata_selected.userData.Annotazioni[key].Oggetto.name+
 					"\" contenente l'Annotazione "+key);
 					to_delete.push(key);
 				}
-			}
-			
+			}	
 			if(to_delete.length>0){
 				to_delete.forEach(el =>{
 					if (campata_selected.userData.Annotazioni[el] !== undefined) {
@@ -1347,7 +1388,6 @@
 			to_remove.forEach(child => {
 				scene3D.remove(child);
 			});
-
 		}
 		
 		// funzione per visualizzare la campata selezionata in 3D
@@ -1383,7 +1423,7 @@
 				resetAnnPos(spalla)
 				var s_p = new THREE.Vector3(g.attributes.position.array[idx], 0, g.attributes.position.array[idx+2]);
 				var e_p = new THREE.Vector3(g.attributes.position.array[idx+3], 0, g.attributes.position.array[idx+5]);
-				var h_min  = 5;
+				var h_min  = 50;
 				if(idx==3){
 					word="Front";
 				} else if(idx==6){
@@ -1421,6 +1461,10 @@
 				}
 				in_corr = ! in_corr;
 			}
+			controls3D.target.set(campata_selected.boundingBox.center.x,0,campata_selected.boundingBox.center.z);
+			if(camera3D.position.distanceTo(controls3D.target)>35000){
+				camera3D.position.set(campata_selected.boundingBox.center.x+1000,campata_selected.userData.Altezza+1000,10000+campata_selected.boundingBox.center.z);
+			}
 			UpdateAnnotazioniGUI();
 		}
 		
@@ -1430,13 +1474,59 @@
 				var a = campata_selected.userData.Annotazioni[key];
 				if (a.Oggetto.name == newobj.name){
 					campata_selected.userData.Annotazioni[key].posizione.y = a.posizione.y-a.Oggetto.position.y+newobj.position.y;
+					if(campata_selected.userData.Annotazioni[key].Rotazione>0){
+						rotateAnn(a, -campata_selected.userData.Annotazioni[key].Rotazione);
+					}
+					rotateAnn(a, train_selected.userData.Rotazione);
+					campata_selected.userData.Annotazioni[key].Rotazione=train_selected.userData.Rotazione;
+					var bb = new THREE.Box3().setFromObject(newobj);
+					if ( bb.containsPoint(campata_selected.userData.Annotazioni[key].posizione) == false ){
+						// Il punto non può essere spostato nella giusta posizione perché sono state fate modifiche al treno 
+						// (es rotazione con centro in altra campata) allora viene riportato al centro dell'oggetto
+						var center = new THREE.Vector3;
+						center = bb.getCenter(center);
+						campata_selected.userData.Annotazioni[key].posizione.x=center.x;
+						campata_selected.userData.Annotazioni[key].posizione.y=center.y;
+						campata_selected.userData.Annotazioni[key].posizione.z=center.z;
+						/* tentativo di ripristinare utilizzando la distanza
+						var dist = new THREE.Vector3(
+							campata_selected.userData.Annotazioni[key].posizione.x-campata_selected.userData.Annotazioni[key].Oggetto.position.x,
+							campata_selected.userData.Annotazioni[key].posizione.y-campata_selected.userData.Annotazioni[key].Oggetto.position.y,
+							campata_selected.userData.Annotazioni[key].posizione.z-campata_selected.userData.Annotazioni[key].Oggetto.position.z				
+						);
+						campata_selected.userData.Annotazioni[key].posizione.x += dist.x;
+						campata_selected.userData.Annotazioni[key].posizione.y += dist.y;
+						campata_selected.userData.Annotazioni[key].posizione.z += dist.z;
+						*/
+					}
 				}
 			}
 		}
 		
+		//funzione per far ruotare l'annotazione intorno al centro dela campata
+		function rotateAnn(a, angle){
+			var pivot = new THREE.Object3D();
+			pivot.position.set(
+				campata_selected.position.x,
+				campata_selected.position.y,
+				campata_selected.position.z
+			);
+			scene3D.add(pivot);
+			var obj = new THREE.Object3D();
+			pivot.add(obj);
+			obj.position.set(
+				a.posizione.x - campata_selected.position.x,
+				a.posizione.y - campata_selected.position.y,
+				a.posizione.z - campata_selected.position.z
+			);
+			pivot.rotation.y = angle*Math.PI/180;
+			a.posizione = obj.getWorldPosition(a.posizione);
+			scene3D.remove(pivot);
+		}
+		
 		// funzione per disegnare una spalla del portapallet
 		function drawSpallaPP(pos_x, h, pos_z){
-			var geometry = new THREE.BoxGeometry( 10, h, 10 );
+			var geometry = new THREE.BoxGeometry( 100, h, 100 );
 			var spalla = new THREE.Mesh( geometry, spalla_material );
 			spalla.position.set(pos_x, (1+h)/2, pos_z);
 			return spalla;
@@ -1444,8 +1534,8 @@
 		
 		// funzione per disegnare un corrente del portapallet 
 		function drawCorrentePP(pos_s, pos_e, h){
-			var dim = pos_s.distanceTo(pos_e)-10;
-			var geometry = new THREE.BoxGeometry( dim, 10, 10 );
+			var dim = pos_s.distanceTo(pos_e)-100;
+			var geometry = new THREE.BoxGeometry( dim, 100, 100 );
 			var corrente = new THREE.Mesh( geometry, corrente_material );
 			corrente.position.set((pos_s.x+pos_e.x)/2, h, (pos_s.z+pos_e.z)/2);
 			var theta = Math.atan((pos_s.x-pos_e.x)/(pos_s.z-pos_e.z))*180/ Math.PI - 90;
@@ -1455,8 +1545,8 @@
 		
 		// funzione per disegnare un traversino orizzontale
 		function drawTraversinoOrPP(pos_s, pos_e, h){
-			var dim = pos_s.distanceTo(pos_e)-1.5;
-			var geometry = new THREE.CylinderGeometry( 3, 3, dim, 32 );
+			var dim = pos_s.distanceTo(pos_e)-100;
+			var geometry = new THREE.CylinderGeometry( 30, 30, dim, 32 );
 			var traversinoOr = new THREE.Mesh( geometry, traversino_material );
 			traversinoOr.position.set((pos_s.x+pos_e.x)/2, h, (pos_s.z+pos_e.z)/2);
 			traversinoOr.rotation.x = 90*Math.PI/180;
@@ -1467,14 +1557,14 @@
 		
 		// funzione per disegnare un traversino diagonale 
 		function drawTraversinoDiagPP(pos_s, pos_e, h_max, h_min){
-			var dim = Math.sqrt( Math.pow(pos_s.distanceTo(pos_e)-1.5, 2) + Math.pow(h_max-h_min-1.5, 2) );
-			var geometry = new THREE.CylinderGeometry( 3, 3, dim, 32 );
+			var dim = Math.sqrt( Math.pow(pos_s.distanceTo(pos_e)-100, 2) + Math.pow(h_max-h_min-100, 2) );
+			var geometry = new THREE.CylinderGeometry( 30, 30, dim, 32 );
 			var traversinoDiag = new THREE.Mesh( geometry, traversino_material );
 			traversinoDiag.position.set((pos_s.x+pos_e.x)/2, (h_max+h_min)/2, (pos_s.z+pos_e.z)/2);
 			var theta = Math.atan(
-				(h_max-h_min)/Math.sqrt( Math.pow(pos_s.z-pos_e.z, 2) + Math.pow(pos_s.x-pos_e.x, 2) )
+				(h_max-h_min)/pos_s.distanceTo(pos_e)
 			);
-			var y = h_max-(dim/2*Math.cos(theta))-1.5;
+			var y = h_max-(dim/(2*Math.cos((Math.PI/2)-theta)))-100;
 			traversinoDiag.lookAt(pos_e.x, y, pos_e.z );
 			return traversinoDiag;
 		}
@@ -1507,13 +1597,8 @@
 		// funzione per disegnare una annotazione in corrispondenza dell'oggetto selezionato 
 		function drawAnnotation(sets){
 			scene3D.remove(scene3D.getObjectByName("Annotazione "+sets.id));
-			geometry = new THREE.SphereGeometry( 10, 32, 32 );
-			var colors = {
-				"Verde": 0x00ff00,
-				"Ocra": 0xAEA04B,
-				"Rosso": 0xff0000
-			}
-			var material = new THREE.MeshBasicMaterial( {color: colors[sets.Livello]} );
+			geometry = new THREE.SphereGeometry( 100, 32, 32 );
+			var material = new THREE.MeshBasicMaterial( {color: colors[sets.Livello], transparent:true} );
 			var sphere = new THREE.Mesh( geometry, material );
 			sphere.name = "Annotazione "+sets.id;
 			sphere.position.set(
@@ -1522,6 +1607,44 @@
 				sets["posizione"].z
 			);
 			scene3D.add(sphere);
+			showAnn2D(material);
+		}
+		
+		// funzione per mostrare l'aannotazione in 2D
+		function showAnn2D(material){
+			var ex_ann2D = undefined;
+			campata_selected.children.forEach(c=>{
+				if(c.name=="Annotazione"){
+					ex_ann2D = c;
+				}
+			});
+			if(ex_ann2D==undefined){
+				var g = new THREE.BoxGeometry(campata_selected.boundingBox.halfSize.x*2, 0, campata_selected.boundingBox.halfSize.z*2 );
+				var ann2D = new THREE.Mesh( g, material );
+				ann2D.name="Annotazione";
+				ann2D.rotation.y=train_selected.userData.Rotazione*Math.PI/180;
+				ann2D.position.y = 1000;
+				campata_selected.add(ann2D);
+			} else {
+				var r_found = false;
+				var o_found = false;
+				for(key in campata_selected.userData.Annotazioni){
+					var a = campata_selected.userData.Annotazioni[key];
+					if(a.Livello=="Rosso") {
+						r_found = true;
+					} else if(a.Livello=="Ocra"){
+						o_found = true;
+					}
+				}
+				if (r_found){
+					var col = colors["Rosso"];
+				} else if (o_found){
+					var col = colors["Ocra"];
+				} else {
+					var col = colors["Verde"];
+				}
+				ex_ann2D.material.color.set(new THREE.Color(col));
+			}
 		}
 		
 		
@@ -1555,6 +1678,7 @@
 							intersects[0].point.y,
 							intersects[0].point.z
 						),
+						Rotazione: train_selected.userData.Rotazione,
 						Intervento: "Monitorare",
 						Nota: "Aggiungi Nota",
 						Elimina: function EliminaAnnotazione(){
